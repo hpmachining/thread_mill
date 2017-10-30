@@ -40,6 +40,8 @@ class ScrewThread(object):
         self.depth = input('Thread depth:\n')
         self.start_plane = input('Starting plane:\n')
         self.tpi = input('Pitch in threads per inch:\n')
+        if float(self.tpi) <= 0.0:
+            raise ValueError("Pitch must be > 0.0")
         self.pitch = 1.0 / float(self.tpi)
         self.validate()
 
