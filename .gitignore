@@ -2,5 +2,5 @@
 __pycache__/
 gui.py
 specs.html
-test.cfg
-test.eia
+test.*
+*.py[cod]
