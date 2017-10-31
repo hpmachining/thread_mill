@@ -9,7 +9,7 @@ class ScrewThread(object):
     """A class to store attributes needed to define a screw thread."""
 
     # pylint: disable=too-many-arguments
-    def __init__(self, major=0.0, minor=0.0, depth=0.0, start=0.0, pitch=0.0):
+    def __init__(self, major=0.0, minor=0.0, depth=0.0, start=0.0, tpi=0.0):
         """Initialize the attributes.
 
         Keyword args:
@@ -17,14 +17,17 @@ class ScrewThread(object):
             minor: Minor diameter.
             depth: Relative depth.
             start: Absolute value of starting plane.
-            pitch: Number of threads per inch (TPI).
+            tpi: Number of threads per inch (TPI).
         """
         self.major_diameter = major
         self.minor_diameter = minor
         self.depth = depth
         self.start_plane = start
-        self.tpi = 0.0
-        self.pitch = pitch
+        self.tpi = tpi
+        if float(self.tpi) > 0.0:
+            self.pitch = 1.0 / float(self.tpi)
+        else:
+            self.pitch = 0.0
 
     def input_thread_info(self):
         """Prompt for and validate the attributes of a screw thread.
@@ -37,12 +40,12 @@ class ScrewThread(object):
         """
         self.major_diameter = input('Major diameter:\n')
         self.minor_diameter = input('Minor diameter:\n')
-        self.depth = input('Thread depth:\n')
-        self.start_plane = input('Starting plane:\n')
         self.tpi = input('Pitch in threads per inch:\n')
         if float(self.tpi) <= 0.0:
-            raise ValueError("Pitch must be > 0.0")
+            raise ValueError("Pitch must be greater than 0.0")
         self.pitch = 1.0 / float(self.tpi)
+        self.start_plane = input('Starting plane:\n')
+        self.depth = input('Thread depth:\n')
         self.validate()
 
     def validate(self):
@@ -258,94 +261,6 @@ class BodyDetails(object):
         return arcs
 
 
-# def calc_pass_percentages(passes):
-#     """Return a list of percentages to be used for radial depth of cut.
-#
-#     Return a list of floats to be used as percentages of the total depth of cut
-#     based on the number of passes. The percentages used are meant to equalize
-#     side cutting pressure on the cutting tool.
-#
-#     Args:
-#         passes: Number of radial offsets. Valid inputs are 1, 2, 3, or 4.
-#
-#     Returns:
-#         A list containing the percentages to use for the radial
-#         depth of cuts based on the number of passes:
-#             1 pass = [1.0]
-#             2 passes = [.65, .35]
-#             3 passes = [.50, .30, .20]
-#             4 passes = [.40, .27, .20, .13]
-#
-#     Raises:
-#         ValueError: If passes is not representable as int or if passes
-#             value is not 1, 2, 3 or 4
-#     """
-#     try:
-#         if not 0 < int(passes) < 5:
-#             raise ValueError
-#     except ValueError:
-#         raise ValueError(str(passes) + ' is not a valid option for number of passes.')
-#     if int(passes) == 1:
-#         return [1.0]
-#     elif int(passes) == 2:
-#         return [.65, .35]
-#     elif int(passes) == 3:
-#         return [.50, .30, .20]
-#     return [.40, .27, .20, .13]
-
-
-# def calc_toolpath_radii(thread, passes, tool_diameter):
-#     """Calculate the toolpath radii.
-#
-#     Calculate the radii to use for each pass of the toolpath.
-#
-#     Args:
-#         thread (ScrewThread): A ScrewThread object.
-#         passes: A list of percentages to use for each pass.
-#         tool_diameter: Diameter of the cutting tool.
-#     """
-#     radii = []
-#     total_stock = round((thread.major_diameter - thread.minor_diameter) / 2.0, 5)
-#     base_radius = round((thread.minor_diameter - tool_diameter) / 2.0, 5)
-#     previous_radius = 0.0
-#     for i in passes:
-#         current_radius = round(base_radius + total_stock * i + previous_radius, 4)
-#         radii.append(current_radius)
-#         previous_radius = current_radius - base_radius
-#     return radii
-
-
-# def calc_lead_arcs(radii):
-#     """Calculate the radii for the entrance and exit arcs.
-#
-#     Args:
-#         radii: A list of toolpath radii.
-#
-#     Returns:
-#         A map of entrance and exit arcs to use for each pass.
-#     """
-#     sin_45 = math.sin(math.radians(45))
-#     return map(lambda lead: round(lead * sin_45, 4), radii)
-
-
-# def calc_feed_adjustment(radii, tool_diameter):
-#     """Calculate the feed rate factor for proper feed per tooth.
-#
-#     Feed rates are applied at the center of the tool. When cutting an internal
-#     thread, the feed at the outside of the tool is faster than at the center.
-#     This function will calculate the factor to use to adjust the feed rate to
-#      get the desired feed per tooth.
-#
-#     Args:
-#         radii: A list of toolpath radii.
-#         tool_diameter: Diameter of the cutting tool.
-#
-#     Returns:
-#         A map of feed rate adjustment factors for each toolpath radius.
-#     """
-#     return map(lambda adjust: (adjust * 2.0) / (adjust * 2.0 + tool_diameter), radii)
-
-
 def post_begin(rpm):
     """Format the beginning of the g-code sub-program.
 
@@ -357,7 +272,16 @@ def post_begin(rpm):
 
 
 def post_body(toolpath, thread, finish_passes, rapid_feed=15.0):
-    """Write the main body of the g-code sub-program."""
+    """Write the main body of the g-code sub-program.
+
+    Args:
+        toolpath (BodyDetails):
+        thread (ScrewThread):
+        finish_passes (int): Number of times to run the last radial cut.
+        rapid_feed: Feed rate in inches per minute to use for
+            rapid moves. (Default 15.0)
+
+    """
     g_code_out = ''
     g_code = ''
     top_plane = str(toolpath.top_plane)
@@ -379,7 +303,7 @@ def post_body(toolpath, thread, finish_passes, rapid_feed=15.0):
             + 'G01 X{} Y{} F{}\n\n'.format(-start_x, start_y, rapid_feed)
         )
         g_code_out += g_code
-    if finish_passes > 1:
+    if int(finish_passes) > 1:
         for _ in range(finish_passes - 1):
             g_code_out += g_code
     return g_code_out
@@ -391,28 +315,26 @@ def post_end():
     return end_out
 
 
-# pylint: disable=too-many-arguments
-def write_config_file(file_out,
-                      file_name,
-                      thread,
-                      tool,
-                      number_of_passes,
-                      finish_passes):
+def format_config(g_code_name,
+                  thread,
+                  tool,
+                  number_of_passes,
+                  finish_passes):
     """Save all the inputs in a file."""
-    file_out.write(file_name + '\n')
-    file_out.write(str(thread.major_diameter) + '\n')
-    file_out.write(str(thread.minor_diameter) + '\n')
-    file_out.write(str(thread.depth) + '\n')
-    file_out.write(str(thread.start_plane) + '\n')
-    file_out.write(str(thread.tpi) + '\n')
-
-    file_out.write(str(tool.diameter) + '\n')
-    file_out.write(str(tool.flutes) + '\n')
-    file_out.write(str(tool.speed) + '\n')
-    file_out.write(str(tool.feed) + '\n')
-
-    file_out.write(number_of_passes + '\n')
-    file_out.write(finish_passes + '\n')
+    return [
+        '{}\n'.format(g_code_name),
+        '{}\n'.format(thread.major_diameter),
+        '{}\n'.format(thread.minor_diameter),
+        '{}\n'.format(thread.tpi),
+        '{}\n'.format(thread.start_plane),
+        '{}\n'.format(thread.depth),
+        '{}\n'.format(tool.diameter),
+        '{}\n'.format(int(tool.flutes)),
+        '{}\n'.format(tool.speed),
+        '{}\n'.format(tool.feed),
+        '{}\n'.format(number_of_passes),
+        '{}\n'.format(finish_passes),
+    ]
 
 
 def main():
@@ -431,19 +353,12 @@ def main():
             finish_passes = input('Number of times to run finish pass:\n')
             if int(finish_passes) < 1:
                 raise ValueError('Finish passes must be greater than 0')
+            config_data = format_config(g_code_name, thread, tool, number_of_passes, finish_passes)
             with open(config_name, 'w') as config_file:
-                write_config_file(config_file,
-                                  g_code_name,
-                                  thread,
-                                  tool,
-                                  number_of_passes,
-                                  finish_passes)
-                config_file.close()
-
+                config_file.write(''.join(config_data))
             g_code_file.write(post_begin(tool.rpm))
             g_code_file.write(post_body(toolpath, thread, int(finish_passes), 20.0))
             g_code_file.write(post_end())
-            g_code_file.close()
     except (ValueError, FileNotFoundError) as ex:
         print(ex)
 
